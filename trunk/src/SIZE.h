@@ -1,0 +1,12 @@
+        integer maxnatom,maxntypes,maxnres
+	parameter (maxnatom=160000,maxntypes=100,maxnres=44000)
+        integer maxbndt,maxangt,maxdiht
+	parameter (maxbndt=1000,maxangt=1000,maxdiht=1000)
+        integer maxbnd,maxang,maxdih
+	parameter (maxbnd=160000,maxang=40000,maxdih=70000)
+        integer maxnatyp,maxnext,maxnphb
+	parameter (maxnatyp=100,maxnext=1000000,maxnphb=1000)
+        integer maxnspm
+        parameter (maxnspm=42000)
+        integer maxcopy
+        parameter (maxcopy=10)

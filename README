@@ -1,0 +1,170 @@
+############################################
+###                                      ###
+### README FOR COMPILING AND TESTING PFA ###
+###                                      ###
+############################################
+
+###########
+## NOTES ##
+###########
+
+This code has been tested using the GNU, Intel, and Portland Group
+FORTRAN compilers ONLY.  Other fortran compilers may not necessarily 
+lead to proper code generation, and could provide incorrect analysis
+results.  Users are cautioned to test new compilers extensively for
+analysis accuracy and general parallel performance. 
+
+
+########################
+## REQUIRED LIBRARIES ##
+########################
+
+All versions: BLAS and LAPACK; MPI
+Parallel file I/O versions: MPI-IO 
+GPU version only: Both the CUDA driver and toolkit 
+
+
+#########################
+## DIRECTORY STRUCTURE ##
+#########################
+
+$PFA_HOME - The main PFA directory
+
+$PFA_HOME/trunk - Sub-directory containing the main code trunk
+$PFA_HOME/tags - Sub-directory containing numbered versions of PFA
+$PFA_HOME/branch - Sub-directory containing branched versions of PFA
+
+$PFA_HOME/$SUB_DIR/src - Source code directory; one exists for each 
+                         branch, tags, and trunk sub-directory. 
+
+$PFA_HOME/test - Sub-directory for testing purposes
+$PFA_HOME/test/input - Contains the input files for the accuracy tests
+$PFA_HOME/test/ana - Will contain the output files from the accuracy tests
+$PFA_HOME/test/pbs - Contains the script files for the accuracy tests
+$PFA_HOME/test/output - Contains pre-made output files for the accuracy
+                        comparison
+
+
+##################################################
+## FILES IN THE '$PFA_HOME/trunk/src' DIRECTORY ##
+##################################################
+
+Header files: SIZE.h, TOP.h, MISC.h
+Main PFA driver file: fastEner.f
+fastDef FORTRAN module file (preprocessed): fastDefines.F
+CUDA kernel files: *.cu
+AMBER readprm codes: readprm.f, nxtsec.f, checksz.f
+Misc. fortran code library: common.f90
+makefile: driver file for the 'make' command
+
+
+#################################
+## PFA COMPILATION AND TESTING ##
+#################################
+
+* Any text within brackets, <...>, should be provided by the
+  user.  The brackets themselves should be not be typed.
+
+* The symbol "$>" refers to a generic shell prompt.        
+
+  -------------------
+  - PFA COMPILATION - 
+  -------------------
+
+[1] Setup the environment variable $PFA_HOME to point to the 
+    top-level PFA directory.  
+
+    Using BASH or TSH SHELL:
+     
+     $> export PFA_HOME = <FULL PATH OF PFA DIRECTORY> 
+
+    Using C SHELL:
+     
+     $> setenv PFA_HOME <FULL PATH OF PFA DIRECTORY> 
+ 
+[2] Change the current working directory to $PFA_HOME/trunk.
+
+     $> cd $PFA_HOME/trunk
+     
+[3] Create a new working directory for compiling PFA.  This directory 
+    should be at the same level as the $PFA_HOME/src sub-directory.
+    Once created, change the current working directory to the newly
+    created compilation directory.
+
+     $> mkdir bin
+     $> cd bin
+
+[4] Copy the makefile from the $PFA_HOME/trunk/src directory to the
+    compilation directory.
+
+     $> cp ../src/makefile .
+
+[5] Find the appropriate system type in the makefile that most closely 
+    matches your compute environment.  Several compilation examples are
+    provided as directives in the makefile including those for (i) 
+    large-scale supercomputers such as Kraken (kraken) at NICS and Ranger
+    (ranger) at TACC, (ii) large-scale GPU clusters such as TACC's Longhorn
+    (longhorn) and NCSA's Lincoln (lincoln), (iii) GPU workstations such
+    as the author's GPU desktop (cmm), and (iv) CPU/GPU clusters such as 
+    the ICMS's Delta cluster at Temple University (delta).   
+
+    Make sure to load the required libraries into the $LD_LIBRARY_PATH
+    environment variable.  For large supercomputing centers, one must
+    carefully load them using the correct module/library loading procedure.
+    Be familiar with the library loading instructions provided by the
+    supercomputing center as they tend to be more complicated than local 
+    clusters or stand-alone workstations.
+
+     $> make <matching makefile directive>
+
+[6] Success!  Now a compiled version of PFA exists in the $PFA_HOME/trunk/bin 
+    directory.  Versions of PFA compiled for a CPU-only environment are typically
+    given the name "pfa.cpu.e", while CUDA accelerated versions are referred to
+    as "pfa.cuda.e".
+
+
+  ---------------
+  - PFA TESTING - 
+  ---------------
+
+
+[1] Change the current working directory to $PFA_HOME/test/pbs.
+
+     $> $PFA_HOME/test/pbs
+
+
+[2] Then, edit the trp.pbs file to allow submission through your own portable batch queuing system.
+    Currently, the file is setup to run on a combination of torque/maui, but slight changes to this file
+    may be necessary due to the small differences in various batch queue systems.  Three variables will
+    need to be changed:
+    TEST_DIR: It should point to the $PFA_HOME/test_dir directory.
+    MPIEXEC: If mpiexec is not in the users $PATH, then set the full path to the 'mpiexec' command
+             here.
+    MPIOPTION: Set any options needed for normal operation of the 'mpiexec' command.
+
+[3] Submit the 'trp.pbs' file:
+
+     $> qsub trp.pbs
+ 
+    This will create a '$PFA_HOME/test_dir/pbs-output' directory, and will also create two files from
+    the analysis to compare for consistency: pfa.out and enerCoul.dat.  These should match the respective
+    files in the $PFA_HOME/test_dir/sample-output' directory.
+
+    However, this PBS script may not work for a particular batch system, and in this case you may need to 
+    contact your system's administrator for help installing mpiexec.  If installing mpiexec is not an option, 
+    one may use the 'mpirun' command instead.  For this, simply go to the $PFA_HOME/sample-input directory 
+    and type:
+
+     $> mpirun -np <# of procs> ./pfa.<cpu or cuda>.e < pfa.in > pfa.out
+
+    where <# of procs> should be an integer that divides evenly into 100 (1,10,100, etc.). 
+
+
+############################
+## USING THE PFA SOFTWARE ##
+############################
+
+For information regarding the PFA usage, please refer to the PFA User's Guide provided with the code.
+Additionally, one may post questions and concerns to the PFA User's Group at the electronic mail address
+at xxxx@xxxx.xxxx.
+
