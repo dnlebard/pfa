@@ -1,16 +1,15 @@
 G = #-g
-#COMPC = g++ 
 COMPC = gcc 
 CUDAC = nvcc 
 OPTC =  -O3 
-CUDA-OPT = ${DBG} -O3 -m64 -I/usr/local/cuda/include -arch sm_20 #-arch sm_13 #-deviceemu  #--ptxas-options=-v 
+CUDA-OPT = ${DBG} -O3 -arch sm_13 #-deviceemu  #--ptxas-options=-v 
 OBJCPU  =  gzReader.o dcdReader.o psfReader.o common.o checksz.o nxtsec.o readprm.o defines.o fastEner.o
 OBJCUDA  =  dvos_gpu.o shell_calc_gpu.o pca_gpu.o ${OBJCPU}
 OBJ  = ${OBJCPU} 
 PGOPT = ${DBG} -O3 ${MACHINE_FLAGS} 
 OPT1  =  ${PGOPT} #${DBG} 
 CUDAEMURT = #-lcudartemu
-CUDART = -lcudart -L/usr/local/cuda/lib 
+CUDART = -lcudart 
 CUDARTLIBLINK = ${CUDAEMURT} ${CUDART}
 CUDALINK = ${DBG} ${CUDARTLIBLINK} -L${CUDALIB} -I${CUDAINC} ${CUDA_LINK_OPT} 
 OPTLINK = ${DBG} 
@@ -44,14 +43,6 @@ nxtsec.o: nxtsec.f
 	$(COMP) $(OPT1) -o nxtsec.o -c nxtsec.f
 clean:
 	rm -rf *.o *.e *.mod 
-lap:
-	cp ../src/*.F .
-	cp ../src/*.f .
-	cp ../src/*.f90 .
-	cp ../src/*.c .
-	cp ../src/*.cu .
-	cp ../src/*.h .
-	make pfa.cuda.e COMP="mpif90" COMPF="mpif90" CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" CUDALIB="/usr/local/cuda/lib" CUDAINC="/usr/local/cuda/include" MACHINE_FLAGS="-L/usr/local/cuda/lib -lstdc++" BLASLINK="-llapack -lblas" 
 cmm:
 	cp ../src/*.F .
 	cp ../src/*.f .
@@ -75,7 +66,23 @@ longhorn:
 	cp ../src/*.c .
 	cp ../src/*.cu .
 	cp ../src/*.h .
-	make pfa.cuda.e COMP=mpif90 COMPF=mpif90 CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" MACHINE_FLAGS="" CUDALIB="/opt/apps/cuda/4.1/cuda/lib64" CUDAINC="/opt/apps/cuda/4.1/cuda/include" BLASLINK="-Wl,-rpath,${TACC_MKL_LIB} -L${TACC_MKL_LIB} -lmkl_lapack -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lguide -lpthread"
+	make pfa.cuda.e COMP=mpif90 COMPF=mpif90 CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" MACHINE_FLAGS="" CUDALIB=${TACC_CUDA_LIB} CUDAINC=${TACC_CUDA_INC} BLASLINK="-Wl,-rpath,${TACC_MKL_LIB} -L${TACC_MKL_LIB} -lmkl_lapack -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lguide -lpthread"
+stampede:
+	cp ../src/*.F .
+	cp ../src/*.f .
+	cp ../src/*.f90 .
+	cp ../src/*.c .
+	cp ../src/*.cu .
+	cp ../src/*.h .
+	make pfa.cuda.e COMP=mpif90 COMPF=mpif90 CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" MACHINE_FLAGS="" CUDALIB=${TACC_CUDA_LIB} CUDAINC=${TACC_CUDA_INC} BLASLINK="-Wl,-rpath,${TACC_MKL_LIB} -L${TACC_MKL_LIB} -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread"
+maverick:
+	cp ../src/*.F .
+	cp ../src/*.f .
+	cp ../src/*.f90 .
+	cp ../src/*.c .
+	cp ../src/*.cu .
+	cp ../src/*.h .
+	make pfa.cuda.e COMP=mpif90 COMPF=mpif90 CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" MACHINE_FLAGS="" CUDALIB=${TACC_CUDA_LIB} CUDAINC=${TACC_CUDA_INC} BLASLINK="-Wl,-rpath,${TACC_MKL_LIB} -L${TACC_MKL_LIB} -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread"
 ncsa:
 	cp ../src/*.F .
 	cp ../src/*.f .
@@ -83,7 +90,7 @@ ncsa:
 	cp ../src/*.c .
 	cp ../src/*.cu .
 	cp ../src/*.h .
-	make  pfa.cuda.e COMP=mpif90 COMPF=mpif90 CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_PGI" MACHINE_FLAGS="" CUDALIB="/usr/local/cuda-3.0/lib64" CUDAINC="/usr/local/cuda-3.0/include" BLASLINK="-Wl,-rpath,${MKL_HOME}/lib/em64t -L${MKL_HOME}/lib/em64t -lmkl_solver_lp64 -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lguide -lpthread"
+	make  pfa.cuda.e COMP=mpif90 COMPF=mpif90 CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_PGI" MACHINE_FLAGS="" CUDALIB="/usr/local/cuda-3.0/lib64" CUDAINC="/usr/local/cuda-3.0/include" BLASLINK="-Wl,-rpath,${MKL_HOME}/lib/em64t -L${MKL_HOME}/lib/em64t -lmkl_solver_lp64 -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread"
 delta:
 	cp ../src/*.F .
 	cp ../src/*.f .
