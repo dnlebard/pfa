@@ -43,6 +43,14 @@ nxtsec.o: nxtsec.f
 	$(COMP) $(OPT1) -o nxtsec.o -c nxtsec.f
 clean:
 	rm -rf *.o *.e *.mod 
+lap:
+	cp ../src/*.F .
+	cp ../src/*.f .
+	cp ../src/*.f90 .
+	cp ../src/*.c .
+	cp ../src/*.cu .
+	cp ../src/*.h .
+	make pfa.cuda.e COMP="mpif90" COMPF="mpif90" CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" CUDALIB="/usr/local/cuda/lib" CUDAINC="/usr/local/cuda/include" MACHINE_FLAGS="-L/usr/local/cuda/lib -lstdc++" BLASLINK="-llapack -lblas"
 cmm:
 	cp ../src/*.F .
 	cp ../src/*.f .

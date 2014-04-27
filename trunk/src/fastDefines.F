@@ -268,11 +268,12 @@
         character(len=20) strResSel             ! The residue selection string (from std input)
         character(len=30) strClusterOut         ! The output file name for the cluster analysis
         character(len=30) strHoleCOM            ! The (input) file name containing the hole C.O.M. vectors
+        character(len=40) exclrFile             ! File name for holding all per-atom exclusions
        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!        
 			
        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
        !!!!!! Various dstring variables !!!!!!!!!
-	type(dstring) :: dFileName              ! dstring of the filename
+        type(dstring) :: dFileName              ! dstring of the filename
       	type(dstring) :: tmpStr                 ! used for writing to the screen, files
         type(dstring) :: dStrThreadType           ! used for writing to the screen the Ener. calc. Type
         type(dstring) :: dStrFileType           ! used for writing to the screen the file type
@@ -329,6 +330,7 @@
         logical :: doDebug                      ! Boolean to tell if we are skipping the main loop for debugging
         logical :: doGyr                        ! Boolean to tell if we are doing the radius of gyration calculation
         logical :: doInert                      ! Boolean to tell if we are doing the moment of intertia calculation
+        logical :: doExclr                      ! Boolean to tell if we are doing the exclusion calculation
        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -2104,6 +2106,7 @@ c    *******************************************************************
 
          ! Locals
          integer :: iExclFile
+         integer :: ii
          type(dString) :: printStr
 c    *******************************************************************
 
