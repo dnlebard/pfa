@@ -50,11 +50,15 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
         write(*,*) tmpStr%data(1:tmpStr%length)                
         tmpStr = new("        ... CLUSTER,COVAR,MTRAJ,PRVL,SELECT,..")        
         write(*,*) tmpStr%data(1:tmpStr%length)                
-        tmpStr = new("        ... HOLE, AND OPTIONS: PROT,SOLV,.....")        
+        tmpStr = new("        ... HOLE, AND OPTIONS: PROT,SOLV,.....")
         write(*,*) tmpStr%data(1:tmpStr%length)                
-        tmpStr = new("        ... IONE,LIPID,OTHER,GYR,INERT) .....:")        
-        write(*,*) tmpStr%data(1:tmpStr%length)                
-        read(*,'(a)') strCalcParms        
+        tmpStr = new("        ... IONE,LIPID,OTHER,GYR,INERT,......:")
+        write(*,*) tmpStr%data(1:tmpStr%length)
+        tmpStr = new("        ... EXCLR)...........................:")
+        write(*,*) tmpStr%data(1:tmpStr%length)
+
+
+        read(*,'(a)') strCalcParms
         dStrEnerCalc = findCalcParm(strCalcParms)
          tmpStr = new(" CALCULATION PARMS: ") + dStrEnerCalc
         write(*,*) tmpStr%data(1:tmpStr%length)                  
@@ -412,6 +416,9 @@ ccccc REMOVED THIS BUT MAY NEED IT AGAIN cccccc
         endif
         if(doCluster) then
           call setResList()                 ! Distribute the resList database to all nodes
+        endif
+        if(doExclr) then
+           call readExclrList()             ! Read and distribute the exclusion list to all nodes
         endif
 
         call allocConfs()                   ! Allocate nodeConf (all) and buffConfs (master only)

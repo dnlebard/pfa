@@ -615,6 +615,15 @@ c        real, parameter :: dCosShift = 2.0                  ! a variable to shi
      x             dimension(:) :: selectAtoms           ! the selected positional data
        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+
+       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+       !!! Exclusion analysis variables                  !
+       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+         real, pointer,
+     x             dimension(:) :: exclrDist             ! the exclusion distance for each system particle
+       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
        !!! Cluster analysis variables                    !
           real                  :: rClusterCut           ! The cutoff for a pair to be called a neighbor
@@ -940,7 +949,7 @@ c    *******************************************************************
       type(dstring)      :: dDQpolC, dPSF, dCovar, dEFS
       type(dstring)      :: dProtV, dSel, dMulti, dClust
       type(dstring)      :: dDebug, dGyr, dInert, dOther
-      type(dstring)      :: dHoleV, dLipid
+      type(dstring)      :: dHoleV, dLipid, dExclR
 c    *******************************************************************
       
       ! Set up dstrings used as the test cases
@@ -980,6 +989,7 @@ c    *******************************************************************
       dDebug  = new('DEBUG')
       dGyr    = new('GYR')
       dInert  = new('INERT')
+      dExclR  = new('EXCLR')
 
       ! init all output dstrings
       findCalcParm = new('')
@@ -1027,7 +1037,8 @@ c    *******************************************************************
       doDebug     = .false.
       doGyr       = .false.
       doInert     = .false.
-      
+      doExclr     = .false.
+
       dTmp = new('  INPUT STRING: |') + new(trim(strCalc))
       dTmp = dTmp + new('|')
       call dStrWrite(6,dTmp)       
@@ -1120,7 +1131,11 @@ c    *******************************************************************
        elseif (indStr(dArray(jj),dInert,iPos)) then ! Found moment of intertia analysis
         doInert = .true.        
         findCalcParm = findCalcParm 
-     x               + new(' INERT') 
+     x               + new(' INERT')
+       elseif (indStr(dArray(jj),dExclR,iPos)) then ! Found exclusion radius calculation
+        doExclr = .true.
+        findCalcParm = findCalcParm
+     x               + new(' EXCLR')
        elseif (indStr(dArray(jj),dDebug,iPos)) then ! Found debugging flag
         doDebug = .true.        
         findCalcParm = findCalcParm 
@@ -2077,14 +2092,51 @@ c!$OMP END PARALLEL
 2001             format (10x,i3,12x,i3)                    
          return
        end subroutine
-       
+
+
+        subroutine readExclrList()
+c    *******************************************************************
+c    ** reads list of per-atom distance exclusions from a file        **
+c    ** on master and
+c    **                                                               **
+c    *******************************************************************
+         implicit none
+
+         ! Locals
+         integer :: iExclFile
+         type(dString) :: printStr
+c    *******************************************************************
+
+        if (rank .eq. master) then
+
+          iExclFile = getUnit()
+         ! open file and read the the exclusion distances
+         open(unit=iExclFile, file=trim(exclrFile), status='old')
+         do ii = 1, natom
+            read(iExclFile,*) exclrDist(ii)
+         enddo            
+         close(iExclFile)
+        endif ! End check for master
+        
+        call MPI_BCAST(exclrDist,natom
+     x               ,MPI_REAL,master, world, ierr)        ! BCAST the exclusion distances
+
+
+         printStr = new("NODE ") + intToStr(rank) +
+     x              new("| exclr(") + intToStr(2) +
+     x              new(") =") + new(" ") + realToStr(exclrDist(2))
+        return
+        end subroutine
+
+
+
        subroutine readCellData()
 c    *******************************************************************
 c    ** reads cell data into memory from a file                       **
 c    **                                                               **
 c    *******************************************************************                      
          implicit none
-         
+
         ! Locals
         integer :: iUnitC
 c    *******************************************************************
@@ -2179,7 +2231,7 @@ c    *******************************************************************
          
         ! Locals
         integer,parameter :: nIndices=18
-        integer,parameter :: nLogicals=45
+        integer,parameter :: nLogicals=46
         integer,parameter :: nReals=9        
         integer, dimension(nIndices) :: iIndices        
         logical, dimension(nLogicals) :: lDecisions
@@ -2252,6 +2304,7 @@ c    *******************************************************************
         lDecisions(43) = doOthers
         lDecisions(44) = doHoleV
         lDecisions(45) = doLipid
+        lDecisions(46) = doExclr
 
         rReals(1) = real(alpha,kind=4)
         rReals(2) = real(beta,kind=4)
@@ -2337,6 +2390,7 @@ c    *******************************************************************
         doOthers    = lDecisions(43)
         doHoleV     = lDecisions(44)
         doLipid     = lDecisions(45)
+        doExclr     = lDecisions(46)
 
         alpha = real(rReals(1),kind=8)
         beta  = real(rReals(2),kind=8)        
@@ -3663,7 +3717,7 @@ c             endif
 
               endif
 
-             if(doShellCalc) then
+              if(doShellCalc) then
                 allocate(nShellTraj(nProc))              
               endif
 c             if(doShellM) then
@@ -3703,6 +3757,11 @@ c             endif
              endif
 		    endif ! End check for master
 
+            !!!!! below are allocaitons for ALL CPUS, including master !!!!
+            if(doExclr) then
+               allocate(exclrDist(natom))
+            endif
+
             if (doProtV .or. doHoleV) then
                allocate(ranX(nAttempts))
                allocate(ranY(nAttempts))
@@ -3734,6 +3793,7 @@ c             endif
                 endif
 
               endif
+
 		    
             allocate(nodeConf(natom))
             allocate(boxLn(1))
@@ -3961,6 +4021,8 @@ c             endif
                deallocate(qdrsqTot)
              endif             
            endif ! End check for master
+
+            if(doExclr) deallocate(exclrDist)
 
             deallocate(nodeConf)
             deallocate(qrms)
