@@ -78,7 +78,7 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
          write(*,*)""         
         endif       
 
-        if (doInduced .or. doAllEner) then
+        if (doInduced .or. doAllEner .or. doExclr) then
          write(*,*) " ENTER ATOMIC POLARIZ. DATABASE (AP-DB) FILE: "
          read(*,'(a)') atomPolFile
          write(*,*) " USING AP-DB FILE NAMED |", 
@@ -276,6 +276,15 @@ c        write(*,*) tmpStr%data(1:tmpStr%length)
         write(*,*)""
         endif       
 
+        if(doExclr) then
+        write(*,*) " ENTER THE PER-ATOM EXCLUSION FILE NAME: "
+        read(*,*) exclrFile
+        write(*,*) " USING THE EXCLUSION FILE NAMED |",
+     x               trim(exclrFile), "|"
+        write(*,*)""
+        endif
+
+
         if(doEnerGap) then        
         write(*,*) " ENTER THE dVos ATOM DATABASE FILENAME: "
         read(*,'(a)') dVosDBFile
@@ -350,7 +359,7 @@ ccccc REMOVED THIS BUT MAY NEED IT AGAIN cccccc
            call initDVosDbase(dVosDBFile)    ! Create database of atoms in Stokes shift calculation
          endif
 
-         if(doInduced .or. doAllEner) then 
+         if(doInduced .or. doAllEner .or. doExclr) then
           call initAlphaDbase(atomPolFile) ! Creates database of all atomic polarizabilities
          endif
          if(doIndCrg) then
@@ -395,7 +404,8 @@ ccccc REMOVED THIS BUT MAY NEED IT AGAIN cccccc
         if(doMdaCalc) then
          call createMDAR()                  ! Create MPI-derived type for the return m(D-A) data        
         endif
-        if(doInduced .or. doAllEner) then
+        if(doInduced .or. doAllEner .or.
+     x     doExclr) then
           call sendAlphaDbase()             ! Give a copy of the atomic polariz. database to everyone
         endif
         call setQRM()                       ! Give a copy of the qrm database to everyone
@@ -417,11 +427,12 @@ ccccc REMOVED THIS BUT MAY NEED IT AGAIN cccccc
         if(doCluster) then
           call setResList()                 ! Distribute the resList database to all nodes
         endif
+
+        call allocConfs()                   ! Allocate nodeConf (all) and buffConfs (master only)
+
         if(doExclr) then
            call readExclrList()             ! Read and distribute the exclusion list to all nodes
         endif
-
-        call allocConfs()                   ! Allocate nodeConf (all) and buffConfs (master only)
 
         if (doMPIIO .and. 
      x     (.not. doMultiTraj)) then        ! Do all MPI-IO initialization
@@ -529,6 +540,7 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
          if(doCoul) call calcEnerCoul()         ! Calculate only coulomb (vert.) energies        
          if(doInduced) call calcEnerInd()       ! Calculate only induced (vert.) energies          
          if(doAllEner) call calcEnerAll()       ! Calculate both coulomb+induced (vert.) energies
+         if(doExclr) call calcEnerExclr()       ! Calculate both coulomb+induced (vert.) energies with exclusions
          if(doPOTL) call calcPotL()             ! Calculate the potential along a line in the protein
          if(doDQEfield) call calcEfieldShel()   ! Calculate the e-field in water shell created by dq atoms
          if(doVPolCorr) call calcVpolShel()     ! Calculate the V_pol correction
@@ -584,7 +596,7 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
         if (.not. doMPIIO) close(idat)  ! traj. (master only)
         
         ! close all open energy files
-        if (doAllEner) then        
+        if (doAllEner .or. doExclr) then
          close(iEnerAll)
         endif
 

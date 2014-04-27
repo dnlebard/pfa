@@ -1136,6 +1136,7 @@ c    *******************************************************************
      x               + new(' INERT')
        elseif (indStr(dArray(jj),dExclR,iPos)) then ! Found exclusion radius calculation
         doExclr = .true.
+        doEnerGap = .true.
         findCalcParm = findCalcParm
      x               + new(' EXCLR')
        elseif (indStr(dArray(jj),dDebug,iPos)) then ! Found debugging flag
@@ -1244,7 +1245,20 @@ c       endif
          doCoul = .false.    ! Turn off idividual calcs ...
          doInduced = .false. ! ... same here.
        endif
-      
+
+      ! If we are using exclusions, we must do all energetics
+      if (doExclr) then
+       !doCoul = .false.    ! Turn off idividual calcs ...
+       !doInduced = .false. ! ... same here.
+       doAllEner = .false. ! just in case...
+
+       doSolv = .true.
+       doProt = .true.
+       findCalcParm = findCalcParm + 
+     x                new(' FORCED(SOLV+PROT)')
+
+      endif
+
       ! Report any unknown parameters
       if(foundUnk) then
        dTmp = new('  --> UNKNOWN PARMS:') + dUnk
@@ -2117,17 +2131,14 @@ c    *******************************************************************
          open(unit=iExclFile, file=trim(exclrFile), status='old')
          do ii = 1, natom
             read(iExclFile,*) exclrDist(ii)
-         enddo            
+         enddo
          close(iExclFile)
+
         endif ! End check for master
         
         call MPI_BCAST(exclrDist,natom
      x               ,MPI_REAL,master, world, ierr)        ! BCAST the exclusion distances
 
-
-         printStr = new("NODE ") + intToStr(rank) +
-     x              new("| exclr(") + intToStr(2) +
-     x              new(") =") + new(" ") + realToStr(exclrDist(2))
         return
         end subroutine
 
@@ -3575,7 +3586,7 @@ c    *******************************************************************
               allocate(buffConfs(natom*nProc))
               allocate(boxLs(nProc))
               if(doGrCalc) allocate(lowRXO(nProc))              
-              if (doAllEner) then
+              if (doAllEner .or. doExclr) then
                if(doIons) then 
                  allocate(dv0inITraj(nProc))
                  allocate(dv0iTraj(nProc))  
@@ -3761,9 +3772,7 @@ c             endif
 		    endif ! End check for master
 
             !!!!! below are allocaitons for ALL CPUS, including master !!!!
-            if(doExclr) then
-               allocate(exclrDist(natom))
-            endif
+
 
             if (doProtV .or. doHoleV) then
                allocate(ranX(nAttempts))
@@ -3797,6 +3806,9 @@ c             endif
 
               endif
 
+            if(doExclr) then
+               allocate(exclrDist(natom))
+            endif
 		    
             allocate(nodeConf(natom))
             allocate(boxLn(1))
@@ -3852,7 +3864,7 @@ c    *******************************************************************
               deallocate(buffConfs)
               deallocate(boxLs)              
               if(doGrCalc) deallocate(lowRXO)
-             if (doAllEner) then
+             if (doAllEner .or. doExclr) then
 
                if(doIons) then 
                  deallocate(dv0inITraj)
@@ -4032,7 +4044,8 @@ c             endif
             if(doEnerGap) then
              deallocate(dVosDbase)
             endif
-            if(doInduced .or. doAllEner) then
+            if(doInduced .or. doAllEner .or.
+     x         doExclr) then
              deallocate(alphaDbase)
             endif
             
@@ -12578,6 +12591,634 @@ c     x         dv0inTraj(iWrite)
         
         return
       end subroutine calcEnerInd        
+
+      subroutine calcEnerExclr()
+c    *******************************************************************
+c    ** calculates induction + coulomb energetics at every timestep   **
+c    ** using a database of atoms that are involved in the Stokes     **
+c    ** Shift correlation function and all other atoms.               **
+c    **                                                               **
+c    ** This function is identical to calcEnerAll, but includes       **
+c    ** per-atom exclusions. i.e., if the atom pair distance is not   **
+c    ** BEYOND a given exclusion distance, the atom pair energy is    **
+c    ** excluded.                                                     **
+c    **                                                               **
+c    *******************************************************************
+        implicit none
+        
+        ! Locals
+        integer :: iw, irc, iWrite
+        integer :: iAtm, iiP, iIon
+        integer :: iLip, iOth
+        integer :: ix, iy, iz        
+        integer :: pidx, widx, lidx
+        integer :: oidx, iidx
+        integer, parameter :: XX=1
+        integer, parameter :: YY=2
+        integer, parameter :: ZZ=3
+        integer :: xInt, yInt, zInt
+        real    :: dXi, dYi, dZi
+        real    :: dX, dY, dZ         
+        real*8  :: Efield1(3),Efield2(3)
+        real*8  :: dQ, rX, rY, rZ, rIJ
+        real*8  :: pQ, pX, pY, pZ
+        real*8  :: lowDX, lowDY, lowDZ
+        real*8  :: ionQ, ionX, ionY, ionZ        
+        real*8  :: lipQ, lipX, lipY, lipZ
+        real*8  :: othQ, othX, othY, othZ        
+        real*8  :: wQ, wX, wY, wZ, delQ        
+        real*8  :: rcX, rcY, rcZ, rcQ1, rcQ2
+        real*8  :: rinv, rinv3, E1sq,E2sq        
+        real*8  :: dfrx, dfry, dfrz, delr2
+        real*8  :: rExcl
+        real*8  :: alphaP, alphaI, alphaW 
+        logical :: skipAtom
+        real    :: myQ
+c    ******************************************************************* 
+
+        if (iConf .eq. 1 ) then
+         if ( rank .eq. master) then 
+          open(unit=iEnerAll,file="enerAll.dat",status="unknown")
+
+          ! write the file header
+          write(iEnerAll, '(a)',advance="no") "# frame "
+          if (doProt) then
+            write(iEnerAll, '(a)',advance="no") 
+     x      "Prot(C)  Prot(Ind)  "
+          endif 
+          if (doSolv) then
+            write(iEnerAll, '(a)',advance="no") 
+     x      "Wat(C)  Wat(Ind)  "
+          endif 
+          if (doIons) then
+            write(iEnerAll, '(a)',advance="no") 
+     x      "Ion(C)  Ion(Ind)  "
+          endif 
+          if (doLipid) then
+            write(iEnerAll, '(a)',advance="no") 
+     x       "Lip(C)  Lip(Ind)  "
+          endif 
+          if (doOthers) then
+            write(iEnerAll, '(a)',advance="no") 
+     x        "Oth(C)  Oth(Ind)  "
+          endif 
+          write(iEnerAll,'(a)',advance="yes") ""
+
+
+
+         endif
+        endif 
+        
+        dv0in = 0.d0         
+        dv0s = 0.d0   ! solvent coulomb
+        dv0p = 0.d0   ! protein Coulomb
+        dv0l = 0.d0   ! lipid Coulomb
+        dv0i = 0.d0   ! ions Coulomb
+        dv0o = 0.d0   ! Other atoms Coulomb
+        dv0inS = 0.d0 ! Solvent (water) induction
+        dv0inP = 0.d0 ! Protein induction
+        dv0inI = 0.d0 ! Ion induction
+        dv0inL = 0.d0 ! Lipid induction
+        dv0inO = 0.d0 ! Other atoms induction
+
+c -----------------------------------------------------------------
+c ---------------  Non-RC protein Atom Section --------------------
+c -----------------------------------------------------------------    
+       if (doProt) then 
+
+        do pidx = 1, nProtStEnd
+         iProtStart = arrProtStart(pidx)
+         iProtEnd   = arrProtEnd(pidx)
+
+        do iip = iProtStart, iProtEnd ! Loop over all non-RC, protein atoms -- new version
+        !do iip = 1, iProtEnd ! Loop over all non-RC, protein atoms -- OLD Version
+         Efield1(:) = 0.d0
+         Efield2(:) = 0.d0        
+
+         rExcl = exclrDist(iip) ! get the exclusion distance for the protein atom
+
+         pQ = real(qrms(iip)%q,kind=8)
+         pX = real(nodeConf(iip)%x,kind=8)                     
+         pY = real(nodeConf(iip)%y,kind=8)
+         pZ = real(nodeConf(iip)%z,kind=8)
+         alphaP = alphaDbase(iip)
+         
+         do irc = 1, iNumDB  ! Loop over all RC atoms     
+          iAtm = dVosDbase(irc)%atom          
+          call searchDBAtom(iip,myQ,skipAtom)
+          if (.not. skipAtom) then
+          
+          !if (iip .ne. iAtm) then ! Make sure we are on different atoms          
+           rcQ1 = real(qrms(iAtm)%q,kind=8)
+           delQ = real(dVosDbase(irc)%q,kind=8)
+           !rcQ2 = rcQ1 + real(dVosDbase(irc)%q,kind=8)
+           rcQ2 = rcQ1 + delQ
+           rcX = real(nodeConf(iAtm)%x,kind=8)                     
+           rcY = real(nodeConf(iAtm)%y,kind=8)
+           rcZ = real(nodeConf(iAtm)%z,kind=8)
+
+
+           ! coordinates are NOT reimaged for the protein
+           ! because interactions with the proteins images
+           ! are not physically relavant
+           dX = pX - rcX
+           dY = pY - rcY
+           dZ = pZ - rcZ
+
+           rIJ = sqrt(dX*dX + dY*dY + dZ*dZ)
+
+           ! Only add if not within exclusion distance
+           if(rIJ > rExcl) then
+
+            rinv = 1.d0/rIJ
+            rinv3 = rinv**3
+           
+            Efield1(XX) = Efield1(XX) +
+     x                 dX*rcQ1*rinv3
+            Efield1(YY) = Efield1(YY) +
+     x                 dY*rcQ1*rinv3
+            Efield1(ZZ) = Efield1(ZZ) +
+     x                 dZ*rcQ1*rinv3          
+     
+            Efield2(XX) = Efield2(XX) +
+     x                 dX*rcQ2*rinv3
+            Efield2(YY) = Efield2(YY) +
+     x                 dY*rcQ2*rinv3
+            Efield2(ZZ) = Efield2(ZZ) +
+     x                 dZ*rcQ2*rinv3          
+
+           dv0p = dv0p + pQ*delQ*rinv ! Calculate the columb(prot) part
+           endif ! end check for exclusion
+          endif ! end check for skip Atom
+          
+         enddo ! End loop over RC atoms
+         
+          E2sq = Efield2(XX)*Efield2(XX) + 
+     x           Efield2(YY)*Efield2(YY) + 
+     x           Efield2(ZZ)*Efield2(ZZ)
+
+          E1sq = Efield1(XX)*Efield1(XX) + 
+     x           Efield1(YY)*Efield1(YY) + 
+     x           Efield1(ZZ)*Efield1(ZZ)
+     
+         dv0inP = dv0inP - 0.5d0*alphaP*(E2sq-E1sq)     
+          
+        enddo ! End the loop over non-RC, protein atoms
+        enddo ! End the loop over the protein starts/ends
+         
+         call MPI_GATHER(real(dv0inP,kind=4),1,MPI_REAL,
+     x                     dv0inPTraj,1,MPI_REAL,
+     x                     master,world,ierr)     
+
+         call MPI_GATHER(real(dv0p,kind=4),1,MPI_REAL,
+     x                     dv0pTraj,1,MPI_REAL,
+     x                     master,world,ierr) 
+
+       endif ! End check for doProt 
+        
+c -----------------------------------------------------------------
+c ---------------  Counter Ion Section ----------------------------
+c -----------------------------------------------------------------
+
+       if (doIons) then 
+c -----------------------------------------------------------------   
+        do iidx = 1, nIonStEnd
+         iIonStart = arrIonStart(iidx)
+         iIonEnd   = arrIonEnd(iidx)
+
+        do iIon = iIonStart, iIonEnd ! Loop over all counter ions
+         Efield1(:) = 0.d0
+         Efield2(:) = 0.d0        
+
+         rExcl = exclrDist(iIon) ! get the exclusion distance for the ion
+
+         ionQ = real(qrms(iIon)%q,kind=8)
+         ionX = real(nodeConf(iIon)%x,kind=8)                     
+         ionY = real(nodeConf(iIon)%y,kind=8)
+         ionZ = real(nodeConf(iIon)%z,kind=8)
+         alphaI = alphaDbase(iIon)
+
+         
+         do irc = 1, iNumDB  ! Loop over RC atoms
+          iAtm = dVosDbase(irc)%atom
+          rcQ1 = real(qrms(iAtm)%q,kind=8)
+
+          delQ =  real(dVosDbase(irc)%q,kind=8) ! new
+          !rcQ2 = rcQ1 + real(dVosDbase(irc)%q,kind=8)          
+          rcQ2 = rcQ1 + delQ  !new
+
+          rcX = real(nodeConf(iAtm)%x,kind=8)                     
+          rcY = real(nodeConf(iAtm)%y,kind=8)
+          rcZ = real(nodeConf(iAtm)%z,kind=8)
+
+          dXi = ionX - rcX
+          dYi = ionY - rcY
+          dZi = ionZ - rcZ
+
+          call imageCoords(dXi,dYi,dZi,dX,dY,dZ)
+
+          rIJ = sqrt(dX*dX + dY*dY + dZ*dZ)
+
+          ! Only add if not within exclusion distance
+          if(rIJ > rExcl) then
+
+          
+           rinv = 1.d0/rIJ
+           rinv3 = rinv**3
+           
+           Efield1(XX) = Efield1(XX) +
+     x                 dX*rcQ1*rinv3
+           Efield1(YY) = Efield1(YY) +
+     x                 dY*rcQ1*rinv3
+           Efield1(ZZ) = Efield1(ZZ) +
+     x                 dZ*rcQ1*rinv3          
+     
+           Efield2(XX) = Efield2(XX) +
+     x                 dX*rcQ2*rinv3
+           Efield2(YY) = Efield2(YY) +
+     x                 dY*rcQ2*rinv3
+           Efield2(ZZ) = Efield2(ZZ) +
+     x                 dZ*rcQ2*rinv3          
+     
+          dv0i = dv0i +
+     x          ionQ*delQ*rinv ! Calculate the columb(ion) part
+          endif ! End check for exclusion
+
+         enddo ! End loop over RC atoms
+         
+          E2sq = Efield2(XX)*Efield2(XX) + 
+     x           Efield2(YY)*Efield2(YY) + 
+     x           Efield2(ZZ)*Efield2(ZZ)
+
+          E1sq = Efield1(XX)*Efield1(XX) + 
+     x           Efield1(YY)*Efield1(YY) + 
+     x           Efield1(ZZ)*Efield1(ZZ)
+     
+         dv0inI = dv0inI - 
+     x            0.5d0*alphaI*(E2sq-E1sq)     
+          
+        enddo ! End the loop over counter ions  
+        enddo ! End the loop over the protein starts/ends 
+c -----------------------------------------------------------------
+
+         call MPI_GATHER(real(dv0inI,kind=4),1,MPI_REAL,
+     x                     dv0inITraj,1,MPI_REAL,
+     x                     master,world,ierr)     
+
+         call MPI_GATHER(real(dv0i,kind=4),1,MPI_REAL,
+     x                     dv0iTraj,1,MPI_REAL,
+     x                     master,world,ierr) 
+
+       endif ! end check for do ions
+c -----------------------------------------------------------------       
+
+
+c ###############################################################
+c -----------------------------------------------------------------
+c ---------------  Lipid Section ----------------------------
+c -----------------------------------------------------------------
+
+       if (doLipid) then 
+c -----------------------------------------------------------------
+        do lidx = 1, nLipStEnd
+         iLipStart = arrLipStart(lidx)
+         iLipEnd   = arrLipEnd(lidx)
+
+        do iLip = iLipStart, iLipEnd ! Loop over all counter lipids
+         Efield1(:) = 0.d0
+         Efield2(:) = 0.d0        
+
+         rExcl = exclrDist(iLip) ! get the exclusion distance for the lipid atom
+
+         lipQ = real(qrms(iLip)%q,kind=8)
+         lipX = real(nodeConf(iLip)%x,kind=8)                     
+         lipY = real(nodeConf(iLip)%y,kind=8)
+         lipZ = real(nodeConf(iLip)%z,kind=8)
+         alphaI = alphaDbase(iLip)
+         
+         do irc = 1, iNumDB  ! Loop over RC atoms
+          iAtm = dVosDbase(irc)%atom
+          rcQ1 = real(qrms(iAtm)%q,kind=8)
+
+          delQ =  real(dVosDbase(irc)%q,kind=8) ! new
+          !rcQ2 = rcQ1 + real(dVosDbase(irc)%q,kind=8)          
+          rcQ2 = rcQ1 + delQ  !new
+
+
+          rcX = real(nodeConf(iAtm)%x,kind=8)                     
+          rcY = real(nodeConf(iAtm)%y,kind=8)
+          rcZ = real(nodeConf(iAtm)%z,kind=8)
+
+          dXi = lipX - rcX
+          dYi = lipY - rcY
+          dZi = lipZ - rcZ
+
+          call imageCoords(dXi,dYi,dZi,dX,dY,dZ)
+
+          rIJ = sqrt(dX*dX + dY*dY + dZ*dZ)
+
+          ! Only add if not within exclusion distance
+          if(rIJ > rExcl) then
+
+           rinv = 1.d0/rIJ
+           rinv3 = rinv**3
+           
+           Efield1(XX) = Efield1(XX) +
+     x                 dX*rcQ1*rinv3
+           Efield1(YY) = Efield1(YY) +
+     x                 dY*rcQ1*rinv3
+           Efield1(ZZ) = Efield1(ZZ) +
+     x                 dZ*rcQ1*rinv3          
+     
+           Efield2(XX) = Efield2(XX) +
+     x                 dX*rcQ2*rinv3
+           Efield2(YY) = Efield2(YY) +
+     x                 dY*rcQ2*rinv3
+           Efield2(ZZ) = Efield2(ZZ) +
+     x                 dZ*rcQ2*rinv3          
+     
+          dv0l = dv0l +
+     x          lipQ*delQ*rinv ! Calculate the columb(ion) part
+          endif ! end check for exclusion atom
+
+         enddo ! End loop over RC atoms
+         
+          E2sq = Efield2(XX)*Efield2(XX) + 
+     x           Efield2(YY)*Efield2(YY) + 
+     x           Efield2(ZZ)*Efield2(ZZ)
+
+          E1sq = Efield1(XX)*Efield1(XX) + 
+     x           Efield1(YY)*Efield1(YY) + 
+     x           Efield1(ZZ)*Efield1(ZZ)
+     
+         dv0inL = dv0inL - 0.5d0*alphaI*(E2sq-E1sq)     
+          
+        enddo ! End the loop over lipids
+        enddo ! End the loop over the protein starts/ends
+c -----------------------------------------------------------------
+c         if(iConf .eq. 1) then
+
+c          print *, "dv0l= ", dv0l
+c          print *, "lipQ= ", lipQ
+c         endif
+
+         call MPI_GATHER(real(dv0inL,kind=4),1,MPI_REAL,
+     x                     dv0inLTraj,1,MPI_REAL,
+     x                     master,world,ierr)     
+
+         call MPI_GATHER(real(dv0l,kind=4),1,MPI_REAL,
+     x                     dv0lTraj,1,MPI_REAL,
+     x                     master,world,ierr) 
+
+
+       endif ! end check for do lipids
+c ----------------------------------------------------------------- 
+
+c -----------------------------------------------------------------
+c ---------------  Other Atom Section ----------------------------
+c -----------------------------------------------------------------
+
+       if (doOthers) then 
+c -----------------------------------------------------------------       
+        do oidx = 1, nOthStEnd
+         iOthStart = arrOthStart(oidx)
+         iOthEnd   = arrOthEnd(oidx)
+
+        do iOth = iOthStart, iOthEnd ! Loop over all counter lipids
+         Efield1(:) = 0.d0
+         Efield2(:) = 0.d0        
+
+         rExcl = exclrDist(iOth) ! get the exclusion distance for the other atom
+
+         othQ = real(qrms(iOth)%q,kind=8)
+         othX = real(nodeConf(iOth)%x,kind=8)                     
+         othY = real(nodeConf(iOth)%y,kind=8)
+         othZ = real(nodeConf(iOth)%z,kind=8)
+         alphaI = alphaDbase(iOth)
+         
+         do irc = 1, iNumDB  ! Loop over RC atoms
+          iAtm = dVosDbase(irc)%atom
+          rcQ1 = real(qrms(iAtm)%q,kind=8)
+
+          delQ =  real(dVosDbase(irc)%q,kind=8) ! new
+          !rcQ2 = rcQ1 + real(dVosDbase(irc)%q,kind=8)          
+          rcQ2 = rcQ1 + delQ  !new
+
+
+          rcX = real(nodeConf(iAtm)%x,kind=8)                     
+          rcY = real(nodeConf(iAtm)%y,kind=8)
+          rcZ = real(nodeConf(iAtm)%z,kind=8)
+
+          dXi = othX - rcX
+          dYi = othY - rcY
+          dZi = othZ - rcZ
+
+          call imageCoords(dXi,dYi,dZi,dX,dY,dZ)
+
+          rIJ = sqrt(dX*dX + dY*dY + dZ*dZ)
+
+          ! Only add if not within exclusion distance
+          if(rIJ > rExcl) then
+
+           rinv = 1.d0/rIJ
+           rinv3 = rinv**3
+           
+           Efield1(XX) = Efield1(XX) +
+     x                 dX*rcQ1*rinv3
+           Efield1(YY) = Efield1(YY) +
+     x                 dY*rcQ1*rinv3
+           Efield1(ZZ) = Efield1(ZZ) +
+     x                 dZ*rcQ1*rinv3          
+     
+           Efield2(XX) = Efield2(XX) +
+     x                 dX*rcQ2*rinv3
+           Efield2(YY) = Efield2(YY) +
+     x                 dY*rcQ2*rinv3
+           Efield2(ZZ) = Efield2(ZZ) +
+     x                 dZ*rcQ2*rinv3          
+     
+          dv0o = dv0o +
+     x          othQ*delQ*rinv ! Calculate the columb(others) part
+          endif ! End check for exclusion atom
+
+         enddo ! End loop over RC atoms
+         
+          E2sq = Efield2(XX)*Efield2(XX) + 
+     x           Efield2(YY)*Efield2(YY) + 
+     x           Efield2(ZZ)*Efield2(ZZ)
+
+          E1sq = Efield1(XX)*Efield1(XX) + 
+     x           Efield1(YY)*Efield1(YY) + 
+     x           Efield1(ZZ)*Efield1(ZZ)
+     
+         dv0inO = dv0inO - 0.5d0*alphaI*(E2sq-E1sq)     
+          
+        enddo ! End the loop over other atoms
+        enddo ! End the loop over the protein starts/ends
+c -----------------------------------------------------------------
+
+         call MPI_GATHER(real(dv0inO,kind=4),1,MPI_REAL,
+     x                     dv0inOTraj,1,MPI_REAL,
+     x                     master,world,ierr)     
+
+         call MPI_GATHER(real(dv0o,kind=4),1,MPI_REAL,
+     x                     dv0oTraj,1,MPI_REAL,
+     x                     master,world,ierr) 
+
+       endif ! end check for do other atoms
+c ----------------------------------------------------------------- 
+
+  
+c ###############################################################        
+c -----------------------------------------------------------------
+c ---------------  Water Atom Section -----------------------------
+c -----------------------------------------------------------------    
+        if(doSolv) then 
+        do widx = 1, nWatStEnd
+         iWatStart = arrWatStart(widx)
+         iWatEnd   = arrWatEnd(widx)
+
+         do iw = iWatStart, iWatEnd
+         !do iw = iWatStart, natom        
+          Efield1(:) = 0.d0
+          Efield2(:) = 0.d0    
+
+          rExcl = exclrDist(iw) ! get the exclusion distance for the water atom
+
+          wQ = real(qrms(iw)%q,kind=8)
+          wX = real(nodeConf(iw)%x,kind=8)                     
+          wY = real(nodeConf(iw)%y,kind=8)
+          wZ = real(nodeConf(iw)%z,kind=8)          
+          alphaW = alphaDbase(iw)
+
+
+         do irc = 1, iNumDB  ! Loop over all database reaction center atoms
+          iAtm = dVosDbase(irc)%atom
+          rcQ1 = real(qrms(iAtm)%q,kind=8)
+          delQ =  real(dVosDbase(irc)%q,kind=8)
+          !rcQ2 = rcQ1 + real(dVosDbase(irc)%q,kind=8)          
+          rcQ2 = rcQ1 + delQ
+          rcX = real(nodeConf(iAtm)%x,kind=8)                     
+          rcY = real(nodeConf(iAtm)%y,kind=8)
+          rcZ = real(nodeConf(iAtm)%z,kind=8)
+
+          dXi = wX - rcX
+          dYi = wY - rcY
+          dZi = wZ - rcZ
+
+          call imageCoords(dXi,dYi,dZi,dX,dY,dZ)
+
+          rIJ = sqrt(dX*dX + dY*dY + dZ*dZ)
+
+          ! Only add if not within exclusion distance
+          if(rIJ > rExcl) then
+
+          rinv = 1.d0/rIJ
+          rinv3 = rinv**3
+           
+          Efield1(XX) = Efield1(XX) + 
+     x                 dX*rcQ1*rinv3
+          Efield1(YY) = Efield1(YY) + 
+     x                 dY*rcQ1*rinv3
+          Efield1(ZZ) = Efield1(ZZ) + 
+     x                 dZ*rcQ1*rinv3          
+     
+          Efield2(XX) = Efield2(XX) + 
+     x                 dX*rcQ2*rinv3
+          Efield2(YY) = Efield2(YY) + 
+     x                 dY*rcQ2*rinv3
+          Efield2(ZZ) = Efield2(ZZ) + 
+     x                 dZ*rcQ2*rinv3          
+     
+         dv0s = dv0s + wQ*delQ*rinv ! Calculate the columb(water) part        
+         endif ! end check for exclusion atom
+
+        enddo ! End loop over RC atoms
+         
+          E2sq = Efield2(XX)*Efield2(XX) + 
+     x           Efield2(YY)*Efield2(YY) + 
+     x           Efield2(ZZ)*Efield2(ZZ)
+
+          E1sq = Efield1(XX)*Efield1(XX) + 
+     x           Efield1(YY)*Efield1(YY) + 
+     x           Efield1(ZZ)*Efield1(ZZ)
+     
+         dv0inS = dv0inS - 0.5d0*alphaW*(E2sq-E1sq)     
+          
+        enddo ! End the loop over all waters     
+       enddo ! End loop over water starts/ends
+
+         call MPI_GATHER(real(dv0inS,kind=4),1,MPI_REAL,
+     x                     dv0inSTraj,1,MPI_REAL,
+     x                     master,world,ierr)     
+
+         call MPI_GATHER(real(dv0s,kind=4),1,MPI_REAL,
+     x                     dv0sTraj,1,MPI_REAL,
+     x                     master,world,ierr) 
+     
+       endif ! End check for doSolv        
+c -----------------------------------------------------------------
+c ---------------  End Calculations  ------------------------------
+c -----------------------------------------------------------------                        
+          if(rank .eq. master)  then
+           
+            do iWrite = 1, nProc
+
+          write(iEnerAll, '(i6)',advance="no") 
+     x    iConf+iWrite-1
+          write(iEnerAll, '(a)',advance="no") " "
+
+          if (doProt) then
+            write(iEnerAll, '(E11.4)',advance="no")  
+     x            dv0pTraj(iWrite)
+            write(iEnerAll, '(a)',advance="no") " "
+            write(iEnerAll, '(E11.4)',advance="no")  
+     x            dv0inPTraj(iWrite)
+            write(iEnerAll, '(a)',advance="no") " "
+          endif 
+
+          if (doSolv) then
+            write(iEnerAll, '(E11.4)',advance="no")  
+     x            dv0sTraj(iWrite)
+            write(iEnerAll, '(a)',advance="no") " "
+            write(iEnerAll, '(E11.4)',advance="no")  
+     x            dv0inSTraj(iWrite)
+            write(iEnerAll, '(a)',advance="no") " "
+          endif 
+
+          if (doIons) then
+            write(iEnerAll, '(E11.4)',advance="no")  
+     x            dv0iTraj(iWrite)
+            write(iEnerAll, '(a)',advance="no") " "
+            write(iEnerAll, '(E11.4)',advance="no")  
+     x            dv0inITraj(iWrite)
+            write(iEnerAll, '(a)',advance="no") " "
+          endif 
+
+          if (doLipid) then
+            write(iEnerAll, '(E11.4)',advance="no")  
+     x            dv0lTraj(iWrite)
+            write(iEnerAll, '(a)',advance="no") " "
+            write(iEnerAll, '(E11.4)',advance="no")  
+     x            dv0inLTraj(iWrite)
+            write(iEnerAll, '(a)',advance="no") " "
+          endif 
+
+          if (doOthers) then
+            write(iEnerAll, '(E11.4)',advance="no")  
+     x            dv0oTraj(iWrite)
+            write(iEnerAll, '(a)',advance="no") " "
+            write(iEnerAll, '(E11.4)',advance="no")  
+     x            dv0inOTraj(iWrite)
+          endif 
+
+          write(iEnerAll,'(a)',advance="yes") ""
+            
+            enddo ! end loop over iwrite
+           endif ! End check for master       
+        
+        return
+      end subroutine calcEnerExclr
 
       subroutine calcEnerAll()
 c    *******************************************************************
