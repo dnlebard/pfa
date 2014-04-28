@@ -13,10 +13,11 @@ CUDART = -lcudart
 CUDARTLIBLINK = ${CUDAEMURT} ${CUDART}
 CUDALINK = ${DBG} ${CUDARTLIBLINK} -L${CUDALIB} -I${CUDAINC} ${CUDA_LINK_OPT} 
 OPTLINK = ${DBG} 
+LIBS = ${BLASLINK} ${OTHERLIB}
 pfa.cpu.e: $(OBJ)
-	$(COMPF) ${BLASLINK} $(OPT1) ${OPTLINK} -o pfa.cpu.e $(OBJ)
+	$(COMPF) ${INC} $(OPT1) ${OPTLINK} -o pfa.cpu.e $(OBJ) ${LIBS}
 pfa.cuda.e: $(OBJCUDA)
-	$(COMPF) ${BLASLINK} $(OPT1) ${CUDALINK} -o pfa.cuda.e $(OBJCUDA)
+	$(COMPF) ${INC} $(OPT1) ${OPTLINK} -o pfa.cuda.e $(OBJCUDA) ${LIBS}
 pca_gpu.o: pca_gpu.cu
 	$(CUDAC) $(CUDA-OPT) -o pca_gpu.o -c pca_gpu.cu
 shell_calc_gpu.o: shell_calc_gpu.cu
@@ -50,7 +51,7 @@ lap:
 	cp ../src/*.c .
 	cp ../src/*.cu .
 	cp ../src/*.h .
-	make pfa.cuda.e COMP="mpif90" COMPF="mpif90" CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" CUDALIB="/usr/local/cuda/lib" CUDAINC="/usr/local/cuda/include" MACHINE_FLAGS="-L/usr/local/cuda/lib -lstdc++" BLASLINK="-llapack -lblas"
+	make pfa.cuda.e COMP="mpif90" COMPF="mpif90" CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" CUDALIB="/usr/local/cuda/lib64" CUDAINC="/usr/local/cuda/include" MACHINE_FLAGS="-L/usr/local/cuda/lib64 -lstdc++" BLASLINK=""
 marcus:
 	cp ../src/*.F .
 	cp ../src/*.f .
@@ -58,7 +59,7 @@ marcus:
 	cp ../src/*.c .
 	cp ../src/*.cu .
 	cp ../src/*.h .
-	make pfa.cuda.e COMP=" gfortran -I/home/dnlebard/open-mpi/include -I/home/dnlebard/open-mpi/lib -L/home/dnlebard/open-mpi/lib -lmpi_f90 -lmpi_f77 -lmpi -lopen-rte -lopen-pal -ldl -Wl,--export-dynamic -lnsl -lutil -lm -ldl" COMPF="gfortran -I/home/dnlebard/open-mpi/include -I/home/dnlebard/open-mpi/lib -L/home/dnlebard/open-mpi/lib -lmpi_f90 -lmpi_f77 -lmpi -lopen-rte -lopen-pal -ldl -Wl,--export-dynamic -lnsl -lutil -lm -ldl" CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" CUDALIB="/usr/local/cuda/lib64" CUDAINC="/usr/local/cuda/include" MACHINE_FLAGS="-L/usr/local/cuda/lib64" BLASLINK="-llapack -lblas" 
+	make pfa.cuda.e COMP="mpif90" COMPF="mpif90" CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" INC="-I/usr/lib/openmpi/include -L/usr/local/cuda/lib64" LIBS="/usr/lib/liblapack.so /usr/lib/libblas.so -llapack -lblas -lm -lcudart"
 cmm:
 	cp ../src/*.F .
 	cp ../src/*.f .
@@ -66,7 +67,8 @@ cmm:
 	cp ../src/*.c .
 	cp ../src/*.cu .
 	cp ../src/*.h .
-	make pfa.cuda.e COMP=" gfortran -I/home/dnlebard/open-mpi/include -I/home/dnlebard/open-mpi/lib -L/home/dnlebard/open-mpi/lib -lmpi_f90 -lmpi_f77 -lmpi -lopen-rte -lopen-pal -ldl -Wl,--export-dynamic -lnsl -lutil -lm -ldl" COMPF="gfortran -I/home/dnlebard/open-mpi/include -I/home/dnlebard/open-mpi/lib -L/home/dnlebard/open-mpi/lib -lmpi_f90 -lmpi_f77 -lmpi -lopen-rte -lopen-pal -ldl -Wl,--export-dynamic -lnsl -lutil -lm -ldl" CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" CUDALIB="/usr/local/cuda/lib64" CUDAINC="/usr/local/cuda/include" MACHINE_FLAGS="-L/usr/local/cuda/lib64" BLASLINK="-llapack -lblas" 
+	make pfa.cuda.e COMP="mpicc" COMPF="mpif90" CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" CUDALIB="/usr/local/cuda/lib64" CUDAINC="/usr/local/cuda/include" MACHINE_FLAGS="-L/usr/local/cuda/lib64" BLASLINK="-llapack -lblas -lm" 
+
 spur:
 	cp ../src/*.F .
 	cp ../src/*.f .
