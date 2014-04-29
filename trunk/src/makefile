@@ -92,6 +92,14 @@ stampede:
 	cp ../src/*.c .
 	cp ../src/*.cu .
 	cp ../src/*.h .
+	make pfa.cuda.e COMP=mpif90 COMPF=mpif90 CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" INC="-Wl,-rpath,${TACC_MKL_LIB} -L${TACC_MKL_LIB} -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -L${TACC_CUDA_LIB} -I${TACC_CUDA_INC} -lcudart"
+stampede-working:
+	cp ../src/*.F .
+	cp ../src/*.f .
+	cp ../src/*.f90 .
+	cp ../src/*.c .
+	cp ../src/*.cu .
+	cp ../src/*.h .
 	make pfa.cuda.e COMP=mpif90 COMPF=mpif90 CUDA_FLAGS="-DENABLE_CUDA" FORT_COMP="-DENABLE_GFORT" MACHINE_FLAGS="" CUDALIB=${TACC_CUDA_LIB} CUDAINC=${TACC_CUDA_INC} BLASLINK="-Wl,-rpath,${TACC_MKL_LIB} -L${TACC_MKL_LIB} -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread"
 maverick:
 	cp ../src/*.F .
